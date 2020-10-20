@@ -12,8 +12,7 @@ from aas.model.concept import *
 from aas.model.provider import *
 from aas.model.submodel import *
 
-from aas_editor.util import getReqParams4init, issubtype, inheritors, isMeta
-
+from aas_editor.util import getReqParams4init, issubtype, inheritors, isMeta, getTypeName
 
 DictItem = NamedTuple("DictItem", key=Any, value=Any)
 
@@ -54,13 +53,12 @@ def getInputWidget(objType, rmDefParams=True, objName="", attrsToHide: dict = No
                    parent=None, objVal=None) -> QtWidgets.QWidget:
     print(objType, objType.__str__, objType.__repr__, objType.__class__)
     attrsToHide = attrsToHide if attrsToHide else {}
-    if isMeta(objType):
+    if isMeta(objType) and not issubtype(objType, Iterable):
         objTypes = inheritors(objType)
         widget = TypeOptionObjGroupBox(objTypes, "", attrsToHide=attrsToHide,
                                        rmDefParams=rmDefParams, objName=objName, parent=parent)
-    # TODO if type is iterable make tuple, now it stuck in meta
-    # typing.Iterable):
-    elif issubtype(objType, (list, tuple, set, dict)) and not issubtype(objType, DictItem):
+    elif issubtype(objType, (list, tuple, set, dict, Iterable)) \
+            and not issubtype(objType, (str, bytes, DictItem)):
         widget = IterableGroupBox(objType, "", rmDefParams=rmDefParams,
                                   parent=parent, objVal=objVal)
     elif issubtype(objType, Union):
@@ -68,9 +66,11 @@ def getInputWidget(objType, rmDefParams=True, objName="", attrsToHide: dict = No
         widget = TypeOptionObjGroupBox(objTypes, "", attrsToHide=attrsToHide,
                                        rmDefParams=rmDefParams, objName=objName, parent=parent)
     elif issubtype(objType, AASReference):
-        if objType.__args__:
+        try:
             type_ = objType.__args__[0]
             attrsToHide["type_"] = type_
+        except AttributeError:
+            pass
         widget = ObjGroupBox(objType, "", attrsToHide=attrsToHide, rmDefParams=rmDefParams,
                              objName=objName, parent=parent, objVal=objVal)
     elif issubtype(objType, (bool, str, int, float, Enum, Type)):
@@ -84,7 +84,7 @@ def getInputWidget(objType, rmDefParams=True, objName="", attrsToHide: dict = No
 class AddObjDialog(AddDialog):
     def __init__(self, objType, parent=None, rmDefParams=True,
                  objName="", objVal=None, windowTitle=""):
-        objName = objName if objName else objType.__name__
+        objName = objName if objName else getTypeName(objType)
         windowTitle = windowTitle if windowTitle else f"Add {objName}"
         AddDialog.__init__(self, parent, windowTitle)
         self.buttonOk.setEnabled(True)
@@ -126,9 +126,9 @@ class ObjGroupBox(GroupBox):
                 val = getattr(objVal, attr.rstrip("_"), None)
                 widgetLayout = self._getInputWidgetLayout(attr, attrType, rmDefParams, val)
                 self.layout().addLayout(widgetLayout)
-        else:
-            widgetLayout = self._getInputWidgetLayout(objName, objType, rmDefParams, objVal)
-            self.layout().addLayout(widgetLayout)
+        # else: # TODO check if it works ok
+        #     widgetLayout = self._getInputWidgetLayout(objName, objType, rmDefParams, objVal)
+        #     self.layout().addLayout(widgetLayout)
 
     def _getInputWidgetLayout(self, attr: str, attrType,
                               rmDefParams: bool, objVal: Any) -> QtWidgets.QHBoxLayout:
@@ -161,7 +161,7 @@ class IterableGroupBox(GroupBox):
         self.iterableType = iterableType
         self.argTypes = list(iterableType.__args__)
         plusButton = QPushButton(f"+ Element", self)
-        plusButton.clicked.connect(self._addInputWidget)
+        plusButton.clicked.connect(lambda: self._addInputWidget(rmDefParams))
         self.layout().addWidget(plusButton)
         self.inputWidgets = []
         if objVal:
@@ -181,7 +181,7 @@ class IterableGroupBox(GroupBox):
                 argType = self.argTypes[0]
             else:
                 raise TypeError(f"expected 1 argument, got {len(self.argTypes)}", self.argTypes)
-        else:
+        else: #  if parentType = dict
             if len(self.argTypes) == 2:
                 DictItem._field_types["key"] = self.argTypes[0]
                 DictItem._field_types["value"] = self.argTypes[1]
@@ -218,7 +218,7 @@ class IterableGroupBox(GroupBox):
         elif issubtype(self.iterableType, dict):
             obj = dict(listObj)
         else:
-            raise TypeError("Unknown type", self.iterableType)
+            obj = list(listObj)
         return obj
 
 
@@ -262,7 +262,7 @@ class StandardInputWidget(QtWidgets.QWidget):
             else:
                 types = union.__args__
             for typ in types:
-                widget.addItem(typ.__name__, typ)
+                widget.addItem(getTypeName(typ), typ)
             if objVal:
                 widget.setCurrentIndex(widget.findData(objVal))
         return widget
@@ -308,8 +308,11 @@ class TypeOptionObjGroupBox(GroupBox):
         # init type-choose combobox
         self.typeComboBox = QComboBox(self)
         for objType in objTypes:
-            self.typeComboBox.addItem(objType.__name__, objType)
-        self.typeComboBox.setCurrentIndex(self.typeComboBox.findData(type(objVal)))
+            self.typeComboBox.addItem(getTypeName(objType), objType)
+        if objVal:
+            self.typeComboBox.setCurrentIndex(self.typeComboBox.findData(type(objVal)))
+        else:
+            self.typeComboBox.setCurrentIndex(0)
         self.layout().insertWidget(0, self.typeComboBox)
 
         currObjType = self.typeComboBox.currentData()

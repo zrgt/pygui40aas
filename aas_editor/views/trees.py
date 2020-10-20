@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QTreeView, QMenu, QAbstractItemView, QAction, QDialo
     QFrame, QAbstractScrollArea, QApplication
 from aas.model import AssetAdministrationShell, Asset, Submodel, SubmodelElement
 
-from aas_editor.dialogs import AddObjDialog
+from aas_editor.dialogs import AddObjDialog, DictItem
 from aas_editor.qcomboboxenumdelegate import QComboBoxEnumDelegate
 from aas_editor.models import VALUE_COLUMN, NAME_ROLE, OBJECT_ROLE, ATTRIBUTE_COLUMN, \
      DetailedInfoTable, Package
@@ -142,20 +142,23 @@ class TreeView(QTreeView):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             # we captured the Enter key press, now we need to move to the next row
-            nextRow = self.currentIndex().row() + 1
-            if nextRow+1 > self.model().rowCount(self.currentIndex().parent()):
-                # we are all the way down, we can 't go any further
-                nextRow -= 1
-            if self.state() == QAbstractItemView.EditingState:
-                # if we are editing, confirm and move to the row below
-                nextIndex = self.currentIndex().siblingAtRow(nextRow)
-                self.setCurrentIndex(nextIndex)
-                self.selectionModel().select(nextIndex, QItemSelectionModel.ClearAndSelect)
-            else:
+            # nextRow = self.currentIndex().row() + 1
+            # if nextRow+1 > self.model().rowCount(self.currentIndex().parent()):
+            #     # we are all the way down, we can 't go any further
+            #     nextRow -= 1
+            # if self.state() == QAbstractItemView.EditingState:
+            #     # if we are editing, confirm and move to the row below
+            #     nextIndex = self.currentIndex().siblingAtRow(nextRow).siblingAtColumn(VALUE_COLUMN)
+            #     self.setCurrentIndex(nextIndex)
+            #     self.selectionModel().select(nextIndex, QItemSelectionModel.ClearAndSelect)
+            # else:
                 # if we're not editing, check if editable and start editing or expand/collapse
                 index2edit = self.currentIndex().siblingAtColumn(VALUE_COLUMN)
                 if index2edit.flags() & Qt.ItemIsEditable:
-                    self.edit(index2edit)
+                    if index2edit.data(OBJECT_ROLE) is None:
+                        self._editCreateHandler()
+                    else:
+                        self.edit(index2edit)
                 else:
                     index2fold = self.currentIndex().siblingAtColumn(0)
                     if self.isExpanded(index2fold):
@@ -211,7 +214,14 @@ class TreeView(QTreeView):
                               objName=objName, objVal=objVal, windowTitle=windowTitle)
         if dialog.exec_() == QDialog.Accepted:
             obj = dialog.getObj2add()
-            self.model().addItem(obj, parent)
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    self.model().addItem(DictItem(key, value), parent)
+            elif isinstance(obj, Iterable) and not isinstance(obj, (str, bytes)):
+                for i in obj:
+                    self.model().addItem(i, parent)
+            else:
+                self.model().addItem(obj, parent)
             self.setFocus()
             self.setCurrentIndex(parent)
         else:
@@ -240,8 +250,6 @@ class PackTreeView(TreeView):
 
     # noinspection PyUnresolvedReferences
     def _upgradeMenu(self):
-        self.addAct.setEnabled(True)
-
         self.openInCurrTabAct.triggered.connect(
             lambda: self.openInCurrTabClicked.emit(self.currentIndex()))
         self.openInNewTabAct.triggered.connect(
@@ -249,16 +257,28 @@ class PackTreeView(TreeView):
         self.openInBackgroundAct.triggered.connect(
             lambda: self.openInBackgroundTabClicked.emit(self.currentIndex()))
 
+    def setModel(self, model: QtCore.QAbstractItemModel) -> None:
+        super(PackTreeView, self).setModel(model)
+        self.selectionModel().currentChanged.connect(self._updateMenu)
+
+    def _updateMenu(self, index: QModelIndex):
+        # update add action
+        obj = index.data(OBJECT_ROLE)
+        if isinstance(obj, (Iterable, Submodel, Package)) or not index.isValid():
+            self.addAct.setEnabled(True)
+        else:
+            self.addAct.setEnabled(False)
+
     def _addHandler(self):
         index = self.currentIndex()
-        attribute = index.data(NAME_ROLE)
+        name = index.data(NAME_ROLE)
         if isinstance(index.data(OBJECT_ROLE), Package) or not index.isValid():
-            self.addItemWithDialog(QModelIndex(), Package)
-        elif attribute == "shells":
+            self.addItemWithDialog(QModelIndex(), Package, rmDefParams=True)
+        elif name == "shells":
             self.addItemWithDialog(index, AssetAdministrationShell, rmDefParams=True)
-        elif attribute == "assets":
+        elif name == "assets":
             self.addItemWithDialog(index, Asset, rmDefParams=True)
-        elif attribute == "submodels":
+        elif name == "submodels":
             self.addItemWithDialog(index, Submodel, rmDefParams=True)
         elif isinstance(index.data(OBJECT_ROLE), Submodel):
             self.addItemWithDialog(index, SubmodelElement, rmDefParams=True)
@@ -305,9 +325,9 @@ class AttrsTreeView(TreeView):
 
     def _buildHandlersForNewItem(self):
         self.model().valueChangeFailed.connect(self.parent().itemDataChangeFailed)
-        self.selectionModel().currentChanged.connect(self._updateDetailInfoItemMenu)
+        self.selectionModel().currentChanged.connect(self._updateMenu)
 
-    def _updateDetailInfoItemMenu(self, index: QModelIndex):
+    def _updateMenu(self, index: QModelIndex):
         # update edit action
         if index.flags() & Qt.ItemIsEditable:
             self.editAct.setEnabled(True)
@@ -320,7 +340,7 @@ class AttrsTreeView(TreeView):
 
         # update add action
         obj = index.data(OBJECT_ROLE)
-        if isinstance(obj, Iterable):
+        if isinstance(obj, Iterable) and not isinstance(obj, (str, bytes, tuple)):
             self.addAct.setEnabled(True)
         else:
             self.addAct.setEnabled(False)
@@ -340,16 +360,22 @@ class AttrsTreeView(TreeView):
         attribute = index.data(NAME_ROLE)
         attrType = getAttrTypeHint(type(self.model().objByIndex(index).parentObj), attribute)
         if objVal:
-            self.addItemWithDialog(index, attrType, objVal=objVal)
+            self.addItemWithDialog(index, attrType, objVal=objVal, objName=f"{attribute} element", rmDefParams=True)
         else:
-            self.addItemWithDialog(index, attrType)
+            self.addItemWithDialog(index, attrType, objName=f"{attribute} element", rmDefParams=True)
 
     def _editCreateHandler(self, objVal=None):
         index = self.currentIndex()
         objVal = objVal if objVal else index.data(OBJECT_ROLE)
         attribute = index.data(NAME_ROLE)
-        attrType = getAttrTypeHint(type(self.model().objByIndex(index).parentObj), attribute)
-        self.replItemWithDialog(index, attrType, objVal=objVal)
+        try:
+            attrType = getAttrTypeHint(type(self.model().objByIndex(index).parentObj), attribute)
+        except KeyError as e:
+            if objVal:
+                attrType = type(objVal)
+            else:
+                raise KeyError(e)
+        self.replItemWithDialog(index, attrType, windowTitle=f"Create {attribute}", objVal=objVal)
 
     def replItemWithDialog(self, index, objType, objVal=None, windowTitle=""):
         objName = index.data(NAME_ROLE)

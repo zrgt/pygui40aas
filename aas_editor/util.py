@@ -6,7 +6,9 @@ from typing import List, Tuple, Union, Dict, Type
 
 from PyQt5.QtCore import Qt, QFile, QTextStream, QModelIndex
 from PyQt5.QtWidgets import QApplication
-from aas.model import SubmodelElement, DataElement, SubmodelElementCollection, Event, Constraint
+from aas.model import SubmodelElement, DataElement, SubmodelElementCollection, Event, Constraint, \
+    Namespace, Referable, Identifiable, HasSemantics, HasKind, Qualifiable, \
+    DataSpecificationContent
 
 from .settings import ATTR_ORDER, PREFERED_LANGS_ORDER, ATTRS_NOT_IN_DETAILED_INFO, \
     ATTR_INFOS_TO_SIMPLIFY, THEMES
@@ -51,14 +53,24 @@ def simplifyInfo(obj, attrName: str = "") -> str:
     return res
 
 
+def getTypeName(objType):
+    try:
+        return objType.__name__
+    except AttributeError:
+        pass
+
+    try:
+        return objType._name
+    except AttributeError:
+        return str(objType)
+
+
 def getDescription(descriptions: dict) -> str:
     if descriptions:
         for lang in PREFERED_LANGS_ORDER:
             if lang in descriptions:
                 return descriptions.get(lang)
         return tuple(descriptions.values())[0]
-
-
 def getDefaultVal(param: str, objType: Type):
     params, defaults = getParams4init(objType)
     if params and defaults:
@@ -116,7 +128,10 @@ def getReqParams4init(objType: Type, rmDefParams: bool=True,
 
     if attrsToHide:
         for attr in attrsToHide:
-            params.pop(attr)
+            try:
+                params.pop(attr)
+            except KeyError:
+                continue
 
     return params
 
@@ -140,7 +155,19 @@ def isUnion(typeHint):
 
 # todo reimplement if in pyi40aas abstract classes will be really abstract
 def isMeta(typ):
-    if typ in (SubmodelElement, DataElement, SubmodelElementCollection, Event, Constraint):
+    if typ in (
+            SubmodelElement,
+            DataElement,
+            SubmodelElementCollection,
+            Event,
+            Referable,
+            Identifiable,
+            HasSemantics,
+            HasKind,
+            Constraint,
+            Qualifiable,
+            Namespace,
+            DataSpecificationContent):
         return True
     if inspect.isabstract(typ):
         return True
