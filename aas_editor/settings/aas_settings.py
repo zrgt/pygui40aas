@@ -7,7 +7,8 @@ from aas.model import AssetAdministrationShell, Asset, ConceptDescription, Submo
     Entity, Capability, Event, Operation, RelationshipElement, AnnotatedRelationshipElement, \
     SubmodelElementCollectionUnordered, SubmodelElementCollectionOrdered, Range, Blob, File, \
     ReferenceElement, DataElement, AdministrativeInformation, Identifier, AbstractObjectStore, \
-    Namespace, SubmodelElementCollection, SubmodelElement, AASReference, ConceptDictionary
+    UniqueIdShortNamespace, UniqueSemanticIdNamespace, SubmodelElementCollection, SubmodelElement, \
+    AASReference, View
 
 import aas_editor.package
 from aas_editor.settings import getCharsIcon, HIDDEN_ATTRS, CHANGED_PARENT_OBJ, ADD_ACT_AAS_TXT, \
@@ -101,9 +102,10 @@ CLASSES_INFO = {
         }
     },
     AssetAdministrationShell: {
-        CHANGED_PARENT_OBJ: "concept_dictionary",
-        ADD_ACT_AAS_TXT: "Add concept dictionary",
-        ADD_TYPE: ConceptDictionary,
+        HIDDEN_ATTRS: ("view",),
+        CHANGED_PARENT_OBJ: "view",
+        ADD_ACT_AAS_TXT: "Add view",
+        ADD_TYPE: View,
     },
     Submodel: {
         HIDDEN_ATTRS: ("submodel_element",),
@@ -137,7 +139,7 @@ ATTR_INFOS_TO_SIMPLIFY = (AdministrativeInformation, Identifier,)
 TYPES_NOT_TO_POPULATE = (type, ABCMeta)
 TYPES_WITH_INSTANCES_NOT_TO_POPULATE = (
     AbstractObjectStore, str, int, float, bool, Enum, Path, util_classes.DictItem)  # '+ TYPES_IN_ONE_ROW
-COMPLEX_ITERABLE_TYPES = (Namespace,)
+COMPLEX_ITERABLE_TYPES = (UniqueIdShortNamespace, UniqueSemanticIdNamespace)
 DEFAULT_ATTRS_TO_HIDE = {"parent": None}
 
 TYPE_ICON_DICT = {

@@ -63,9 +63,11 @@ class Package:
 
         fileType = self.file.suffix.lower().strip()
         if fileType == ".xml":
-            aasx.write_aas_xml_file(self.file.as_posix(), self.objStore)
+            with open(self.file.as_posix(), 'w') as file:
+                aasx.write_aas_xml_file(file=file, data=self.objStore)
         elif fileType == ".json":
-            aasx.write_aas_json_file(self.file.as_posix(), self.objStore)
+            with open(self.file.as_posix(), 'w') as file:
+                aasx.write_aas_json_file(file=file, data=self.objStore)
         elif fileType == ".aasx":
             # todo ask user if save in xml, json or both
             #  writer.write_aas_objects("/aasx/data.json" if args.json else "/aasx/data.xml",
